@@ -1,0 +1,5 @@
+google_sheets_credentials.json
+.mypy_cache/*
+data/*
+token.pickle
+*#*
