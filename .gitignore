@@ -3,3 +3,4 @@ google_sheets_credentials.json
 data/*
 token.pickle
 *#*
+.DS_Store

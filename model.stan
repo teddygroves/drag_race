@@ -1,93 +1,68 @@
 functions {
-  real exploded_logit_lpmf_subterm(vector abilities, int first_tie, int last_tie){
-    /* NB abilities are assumed to be in true rank order*/
-    real out = 0;
-    for(t in first_tie:last_tie) {
-      out += abilities[t] - log_sum_exp(abilities[t:]);
-    }
-    return out;
+  real maxi_challenge_lp(vector abilities){
+    // winner
+    real winner_lp = abilities[1] - log_sum_exp(abilities);
+    // assume bottom two are maxi-exchangeable
+    vector[2] possibilities;
+    int n = rows(abilities);
+    possibilities[1] =
+      // bottom is worse than second bottom
+      -abilities[n] - log_sum_exp(-abilities[2:n])
+      -abilities[n-1] - log_sum_exp(-abilities[2:n-1]);
+    possibilities[2] =
+      // second bottom is worse than bottom
+      -abilities[n-1] - log_sum_exp(-abilities[2:n])
+      -abilities[n] - log_sum_exp(append_row(-abilities[2:n-2], -abilities[n]));
+    return winner_lp + log_sum_exp(possibilities);
   }
-  real exploded_logit_lpmf_term(vector abilities,
-                                int first_tied_ability_ix,
-                                int last_tied_ability_ix){
-    real out = 0;
-    int n_ties = 1 + last_tied_ability_ix - first_tied_ability_ix;
-    int n_permutations = get_n_permutations(n_ties);
-    vector[n_ties] tied = abilities[first_tied_ability_ix:last_tied_ability_ix];
-    vector[n_permutations] permutations = get_permutations(tied);
-    for (p_ix in 1:n_permutations){
-      tied_abilities = permutations[p_ix];
-      vector[n_ability] permutation_abilities =
-        append_row(abilities[:first_tied_ability_ix-1],
-                   append_row(tied_abilities, abilities[last_tied_ability+1:]));
-      subterm = exploded_logit_lpmf_subterm(permutation_abilities,
-                                            first_tied_ability_ix,
-                                            last_tied_ability_ix);
-      out += exp(subterm);
-    }
-    return log(out);
-
-  }
-  real exploded_logit_with_ties_lpmf(int[] ranks, vector abilities){
-    /* nb ranks don't need to be unique*/
-    int J = len(ranks);
-    int K = max(ranks);
-
-    // array of rank counts
-    int d[K] = rep_array(0, K);
-    for (j in 1:J){
-      d[ranks[j]] += 1;
-    }
-
-    real lprob = 0;
-    int pos = 1;
-    for (k in 1:K){
-      real lprob_k = 0;
-      int dk = d[k];
-      n_perm = tgamma(dk);
-      vector[dk] tied_abilities = segment(abilities, pos, dk);
-      pos += dk;
-
-      int[dk] true_rank_permutations[n_perm] = get_permutations(d[k]);
-
-      for (i in 1:nperm){
-        p = true_rank_permutations[i];
-        lprob_p = 0;
-        for (r in 1:dk){
-          lprob_p += tied_abilities[r]
-            - (log_sum_exp(tied_abilities[r:dk])
-               + log_sum_exp(abilities[k:]));
-
-        }
-        lprob_k +=
-          }
-    }
-    
-    }
 }
 data {
   int<lower=1> N;
+  int<lower=1> K;
   int<lower=1> N_episode;
   int<lower=1> N_contestant;
-  int<lower=1,upper=N_contestant> contestant[N];  // nb they are ranked per episode
+  int<lower=1> N_contestant_next;
+  int<lower=1,upper=N_contestant> contestant[N];  // nb ranked per episode first > safe > bottom2
+  int<lower=1,upper=N_contestant> contestant_next[N_contestant_next];
   int<lower=1> N_episode_contestant[N_episode];
-  int<lower=1> episode_rank[N];
+  matrix[N_contestant, K] X;
 }
 parameters {
-  vector[N_contestant] ability;
-  vector[N_contestant] ability_lipsync;
-  real sigma_ability;
+  vector[N_contestant] ability_maxi_z;
+  real<lower=0> sigma_ability_maxi;
+  vector[N_contestant] ability_lipsync_z;
+  real<lower=0> sigma_ability_lipsync;
+  vector[K] beta_maxi;
+  vector[K] beta_lipsync;
+}
+transformed parameters {
+  vector[N_contestant] ability_maxi = X * beta_maxi + ability_maxi_z * sigma_ability_maxi;
+  vector[N_contestant] ability_lipsync = X * beta_lipsync + ability_lipsync_z * sigma_ability_lipsync;
 }
 model {
+  int pos = 1;
   // priors
-  ability ~ normal(0, sigma_ability);
+  ability_maxi_z ~ student_t(4, 0, 1);
+  ability_lipsync_z ~ student_t(4, 0, 1);
+  beta_maxi ~ normal(0, 1);
+  beta_lipsync ~ normal(0, 1);
+  sigma_ability_maxi ~ normal(0, 1.5);
+  sigma_ability_lipsync ~ normal(0, 1.5);
   // likelihood
-  pos = 1;
   for (e in 1:N_episode){
     int n = N_episode_contestant[e];
-    vector[n] episode_abilities = abilities[contestant[pos:pos+n]];
-    target += get_log_prob_winner(episode_abilities);
-    target += get_log_prob_bottom_two(episode_abilities);
+    vector[n] episode_abilities_maxi = segment(ability_maxi[contestant], pos, n);
+    vector[n] episode_abilities_lipsync = segment(ability_lipsync[contestant], pos, n);
+    target += maxi_challenge_lp(episode_abilities_maxi);
+    target += bernoulli_logit_lpmf(1 | episode_abilities_lipsync[n-1] - episode_abilities_lipsync[n]);
     pos += n;
+  }
+}
+generated quantities {
+  int is_eliminated[N_contestant] = rep_array(0, N_contestant);
+  {
+    int bottom_two[2] = contestant_next[sort_indices_asc(ability_maxi[contestant_next])[1:2]];
+    int eliminated_contestant = bottom_two[sort_indices_asc(ability_lipsync[bottom_two])[1]];
+    is_eliminated[eliminated_contestant] = 1;
   }
 }

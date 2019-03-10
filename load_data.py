@@ -1,6 +1,14 @@
-from __future__ import print_function
+"""Code for saving a google sheet of drag race results and data as csvs.
+
+   Copied from https://developers.google.com/sheets/api/quickstart/python
+
+   To use, get a `google_sheets_credentials.json` file by following the goolge
+   sheets api link above and then run `python load_data.py`
+
+"""
+
+import os
 import pickle
-import os.path
 import pandas as pd
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -42,8 +50,7 @@ def get_google_sheet(spreadsheet_id, range_name):
 
 
 def get_df_from_google_sheet(gsheet):
-    """ Converts Google sheet data to a Pandas DataFrame.
-    """
+    """ Converts Google sheet data to a Pandas DataFrame."""
     header = gsheet.get('values', [])[0]   # Assumes first line is header!
     values = gsheet.get('values', [])[1:]  # Everything else is data.
     if not values:
