@@ -1,5 +1,5 @@
 functions {
-  real maxi_challenge_lp(vector abilities){
+  real maxi_challenge_lp_one_winner(vector abilities){
     // winner
     real winner_lp = abilities[1] - log_sum_exp(abilities);
     // assume bottom two are maxi-exchangeable
@@ -15,6 +15,18 @@ functions {
       -abilities[n] - log_sum_exp(append_row(-abilities[2:n-2], -abilities[n]));
     return winner_lp + log_sum_exp(possibilities);
   }
+  real maxi_challenge_lp_two_winners(vector abilities){
+    vector[rows(abilities)] swapped_abilities = append_row([abilities[2], abilities[1]]', abilities[3:]);
+    vector[2] lp_cases = [maxi_challenge_lp_one_winner(abilities),
+                          maxi_challenge_lp_one_winner(swapped_abilities)]';
+    return log_sum_exp(lp_cases);
+  }
+  real maxi_challenge_lp(vector abilities, int double_winner){
+    return
+      double_winner == 1 ?
+      maxi_challenge_lp_two_winners(abilities) :
+      maxi_challenge_lp_one_winner(abilities);
+  }
 }
 data {
   int<lower=1> N;
@@ -25,6 +37,7 @@ data {
   int<lower=1,upper=N_contestant> contestant[N];  // nb ranked per episode first > safe > bottom2
   int<lower=1,upper=N_contestant> contestant_next[N_contestant_next];
   int<lower=1> N_episode_contestant[N_episode];
+  int<lower=0,upper=1> double_winner[N_episode];
   matrix[N_contestant, K] X;
 }
 parameters {
@@ -53,7 +66,7 @@ model {
     int n = N_episode_contestant[e];
     vector[n] episode_abilities_maxi = segment(ability_maxi[contestant], pos, n);
     vector[n] episode_abilities_lipsync = segment(ability_lipsync[contestant], pos, n);
-    target += maxi_challenge_lp(episode_abilities_maxi);
+    target += maxi_challenge_lp(episode_abilities_maxi, double_winner[e]);
     target += bernoulli_logit_lpmf(1 | episode_abilities_lipsync[n-1] - episode_abilities_lipsync[n]);
     pos += n;
   }

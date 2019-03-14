@@ -50,6 +50,14 @@ def prepare_data():
               on=['season_number', 'episode_number'])
         .sort_values(['season_number', 'episode_number', 'rank'])
     )
+
+    double_winner = (rankings
+                     .groupby('episode_id')
+                     ['rank']
+                     .apply(lambda s: s.eq(1).sum() == 2)
+                     .astype(int)
+                     .rename('double_winner'))
+    rankings = rankings.join(double_winner, on='episode_id')
     season_starts = (
         episodes.groupby('season_number')['episode_airdate'].min()
         .rename('season_start')
@@ -101,6 +109,7 @@ def get_stan_input(contestants, rankings, contestants_next):
         'contestant': rankings['contestant_id'],
         'contestant_next': contestants_next,
         'N_episode_contestant': rankings.groupby('episode_id').size(),
+        'double_winner': rankings.groupby('episode_id')['double_winner'].first(),
         'X': contestants[PREDICTORS]
     }
 
@@ -162,6 +171,7 @@ def run_model():
     contestants.to_csv('data/results.csv')
     print(contestants.loc[contestants_next]
           .set_index('contestant_name')
+          .sort_values('elim_prob')
           [['maxi_mean', 'maxi_sd', 'lipsync_mean', 'lipsync_sd', 'elim_prob']])
 
 if __name__ == '__main__':
