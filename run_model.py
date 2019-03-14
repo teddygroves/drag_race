@@ -168,7 +168,7 @@ def run_model():
     contestants['lipsync_sd'] = ability_lipsync.std()
     contestants = contestants.join(elim_prob)
     infd.to_netcdf('data/output.nd')
-    contestants.to_csv('data/results.csv')
+    contestants.to_csv('data/output_contestants.csv')
     print(contestants.loc[contestants_next]
           .set_index('contestant_name')
           .sort_values('elim_prob')
