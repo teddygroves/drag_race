@@ -21,7 +21,7 @@ PLACE_MAP = {
     'OUT': 2
 }
 ELIMINATED = ['Eliminated', 'DISQ', 'OUT', 'ELIM']
-PREDICTORS = ['age_z', 'is_ny']
+PREDICTORS = ['age_z']
 Z_COLS = ['age']
 
 
