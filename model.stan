@@ -1,81 +1,57 @@
 functions {
-  real maxi_challenge_lp_one_winner(vector abilities){
-    // winner
-    real winner_lp = abilities[1] - log_sum_exp(abilities);
-    // assume bottom two are maxi-exchangeable
-    vector[2] possibilities;
-    int n = rows(abilities);
-    possibilities[1] =
-      // bottom is worse than second bottom
-      -abilities[n] - log_sum_exp(-abilities[2:n])
-      -abilities[n-1] - log_sum_exp(-abilities[2:n-1]);
-    possibilities[2] =
-      // second bottom is worse than bottom
-      -abilities[n-1] - log_sum_exp(-abilities[2:n])
-      -abilities[n] - log_sum_exp(append_row(-abilities[2:n-2], -abilities[n]));
-    return winner_lp + log_sum_exp(possibilities);
+real rpdr_outcome_lp(vector ability, int W, int S, int B){
+  int N_contestant = rows(ability);
+  real out = 0;
+  if ((W > 0) && (W < N_contestant)){
+    for (w in 1:W){
+      out += ability[w] - log_sum_exp(append_row(ability[w], ability[W+1:]));
+    }
   }
-  real maxi_challenge_lp_two_winners(vector abilities){
-    vector[rows(abilities)] swapped_abilities = append_row([abilities[2], abilities[1]]', abilities[3:]);
-    vector[2] lp_cases = [maxi_challenge_lp_one_winner(abilities),
-                          maxi_challenge_lp_one_winner(swapped_abilities)]';
-    return log_sum_exp(lp_cases);
+  if ((S > 0) && (W+S < N_contestant)){
+    for (s in W+1:W+S){
+      out += ability[s] - log_sum_exp(append_row(ability[s], ability[W+S+1:]));
+    }
   }
-  real maxi_challenge_lp(vector abilities, int double_winner){
-    return
-      double_winner == 1 ?
-      maxi_challenge_lp_two_winners(abilities) :
-      maxi_challenge_lp_one_winner(abilities);
+  if ((B > 0) && (W+S+B < N_contestant)){
+    for (b in W+S+1:W+S+B){
+      out += ability[b] - log_sum_exp(append_row(ability[b], ability[W+S+B+1:]));
+    }
   }
+  return out;
+}
 }
 data {
-  int<lower=1> N;
-  int<lower=1> K;
-  int<lower=1> N_episode;
-  int<lower=1> N_contestant;
-  int<lower=1> N_contestant_next;
-  int<lower=1,upper=N_contestant> contestant[N];  // nb ranked per episode first > safe > bottom2
-  int<lower=1,upper=N_contestant> contestant_next[N_contestant_next];
-  int<lower=1> N_episode_contestant[N_episode];
-  int<lower=0,upper=1> double_winner[N_episode];
-  matrix[N_contestant, K] X;
+  int<lower=1> N;  // Number of episode participations
+  int<lower=1> K;  // Number of predictors
+  int<lower=1> E;  // Number of episodes
+  int<lower=1> C;  // Number of contestants
+  matrix[C, K] X;
+  int<lower=1> N_episode_contestant[E];
+  int<lower=0> N_episode_winner[E];
+  int<lower=0> N_episode_safe[E];
+  int<lower=0> N_episode_bottom[E];
+  int<lower=1,upper=C> contestant[N];
 }
 parameters {
-  vector[N_contestant] ability_maxi_z;
-  real<lower=0> sigma_ability_maxi;
-  vector[N_contestant] ability_lipsync_z;
-  real<lower=0> sigma_ability_lipsync;
-  vector[K] beta_maxi;
-  vector[K] beta_lipsync;
+  vector[C] ability_z;
+  real<lower=0> sigma_ability;
+  vector[K] beta;
 }
 transformed parameters {
-  vector[N_contestant] ability_maxi = X * beta_maxi + ability_maxi_z * sigma_ability_maxi;
-  vector[N_contestant] ability_lipsync = X * beta_lipsync + ability_lipsync_z * sigma_ability_lipsync;
+  vector[C] ability = X * beta + ability_z * sigma_ability;
 }
 model {
   int pos = 1;
   // priors
-  ability_maxi_z ~ student_t(4, 0, 1);
-  ability_lipsync_z ~ student_t(4, 0, 1);
-  beta_maxi ~ normal(0, 1);
-  beta_lipsync ~ normal(0, 1);
-  sigma_ability_maxi ~ normal(0, 1.5);
-  sigma_ability_lipsync ~ normal(0, 1.5);
+  ability_z ~ normal(0, 1);
+  beta ~ normal(0, 1);
+  sigma_ability ~ normal(0, 1);
   // likelihood
-  for (e in 1:N_episode){
-    int n = N_episode_contestant[e];
-    vector[n] episode_abilities_maxi = segment(ability_maxi[contestant], pos, n);
-    vector[n] episode_abilities_lipsync = segment(ability_lipsync[contestant], pos, n);
-    target += maxi_challenge_lp(episode_abilities_maxi, double_winner[e]);
-    target += bernoulli_logit_lpmf(1 | episode_abilities_lipsync[n-1] - episode_abilities_lipsync[n]);
-    pos += n;
-  }
-}
-generated quantities {
-  int is_eliminated[N_contestant] = rep_array(0, N_contestant);
-  {
-    int bottom_two[2] = contestant_next[sort_indices_asc(ability_maxi[contestant_next])[1:2]];
-    int eliminated_contestant = bottom_two[sort_indices_asc(ability_lipsync[bottom_two])[1]];
-    is_eliminated[eliminated_contestant] = 1;
+  for (e in 1:E){
+    target += rpdr_outcome_lp(ability[segment(contestant, pos, N_episode_contestant[e])],
+                              N_episode_winner[e],
+                              N_episode_safe[e],
+                              N_episode_bottom[e]);
+    pos += N_episode_contestant[e];
   }
 }
