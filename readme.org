@@ -1,0 +1,13 @@
+Stan model and python code for modelling RuPaul's drag race
+
+* Usage
+
+#+begin_src bash
+python run_model.py
+#+end_src
+
+* Dependencies
+- pystan
+- arviz
+- pandas
+- numpy
