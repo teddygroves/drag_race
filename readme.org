@@ -11,3 +11,5 @@ python run_model.py
 - arviz
 - pandas
 - numpy
+
+I've only used the model with python 3.7
