@@ -1,36 +1,38 @@
 functions {
-real rpdr_outcome_lp(vector ability, int W, int S, int B){
-  int N_contestant = rows(ability);
-  real out = 0;
-  if ((W > 0) && (W < N_contestant)){
-    for (w in 1:W){
-      out += ability[w] - log_sum_exp(append_row(ability[w], ability[W+1:]));
-    }
-  }
-  if ((S > 0) && (W+S < N_contestant)){
-    for (s in W+1:W+S){
-      out += ability[s] - log_sum_exp(append_row(ability[s], ability[W+S+1:]));
-    }
-  }
-  if ((B > 0) && (W+S+B < N_contestant)){
-    for (b in W+S+1:W+S+B){
-      out += ability[b] - log_sum_exp(append_row(ability[b], ability[W+S+B+1:]));
-    }
+  real rpdr_outcome_lp(vector ability, int[] episode_rank){
+    real out = 0;
+    int first_in_group = 1;
+    for (contestant in 1:rows(ability)){
+      if ((contestant > 1)
+          && (episode_rank[contestant] > episode_rank[contestant-1])){
+        first_in_group = contestant;
+      }
+      if (episode_rank[contestant] < max(episode_rank)){
+        out += ability[contestant] - log_sum_exp(ability[first_in_group:]);
+      }
   }
   return out;
-}
+  }
 }
 data {
-  int<lower=1> N;  // Number of episode participations
-  int<lower=1> K;  // Number of predictors
-  int<lower=1> E;  // Number of episodes
-  int<lower=1> C;  // Number of contestants
-  matrix[C, K] X;
+  int<lower=1> N;         // Number of episode participations
+  int<lower=1> K;         // Number of predictors
+  int<lower=1> E;         // Number of episodes
+  int<lower=1> C;         // Number of contestants
+  int<lower=1> N_survey;  // Number of surveys
+  matrix[C, K] X;         // Contestant level predictors
+  // episode data
   int<lower=1> N_episode_contestant[E];
-  int<lower=0> N_episode_winner[E];
-  int<lower=0> N_episode_safe[E];
-  int<lower=0> N_episode_bottom[E];
+  int<lower=1,upper=6> episode_rank[N];
   int<lower=1,upper=C> contestant[N];
+  // survey data
+  int<lower=1,upper=C> survey_contestant[N_survey];
+  int<lower=1,upper=C> survey_opponent[N_survey];
+  int<lower=1> survey_count[N_survey];
+  int<lower=0> survey_wins[N_survey];
+  // config 
+  int<lower=0,upper=1> use_survey;
+  int<lower=0,upper=1> use_episodes;
 }
 parameters {
   vector[C] ability_z;
@@ -47,11 +49,15 @@ model {
   beta ~ normal(0, 1);
   sigma_ability ~ normal(0, 1);
   // likelihood
-  for (e in 1:E){
-    target += rpdr_outcome_lp(ability[segment(contestant, pos, N_episode_contestant[e])],
-                              N_episode_winner[e],
-                              N_episode_safe[e],
-                              N_episode_bottom[e]);
-    pos += N_episode_contestant[e];
+  if (use_survey == 1){
+    survey_wins ~ binomial_logit(survey_count, ability[survey_contestant] - ability[survey_opponent]);
+  }
+  if (use_episodes == 1){
+    for (e in 1:E){
+      int contestants[N_episode_contestant[e]] = segment(contestant, pos, N_episode_contestant[e]);
+      int episode_ranks[N_episode_contestant[e]] = segment(episode_rank, pos, N_episode_contestant[e]);
+      target += rpdr_outcome_lp(ability[contestants], episode_ranks);
+      pos += N_episode_contestant[e];
+    }
   }
 }
